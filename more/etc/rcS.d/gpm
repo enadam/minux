@@ -1,0 +1,4 @@
+modprobe mousedev;
+modprobe psmouse;
+mknod /dev/psaux c 10 1;
+gpm -m /dev/psaux -t ps2 -r 3;

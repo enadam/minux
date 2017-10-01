@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if [ -d /lib/modules/`uname -r` ];
+then
+	exec busybox modprobe "$@";
+lese
+	exit 0;
+fi

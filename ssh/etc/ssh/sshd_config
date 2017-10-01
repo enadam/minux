@@ -1,0 +1,3 @@
+UsePrivilegeSeparation no
+PermitEmptyPasswords yes
+Subsystem sftp /lib/sftp-server

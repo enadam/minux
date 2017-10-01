@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# sshd wants to be executed with full path.
+exec /bin/sshd.real "$@";

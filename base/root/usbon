@@ -1,0 +1,5 @@
+#!/bin/sh -e
+
+modprobe ehci_hcd;
+modprobe sd_mod;
+modprobe usb-storage;

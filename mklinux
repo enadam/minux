@@ -1,0 +1,286 @@
+#!/bin/bash -e
+#
+# mklinux -- generate bootable CD images from a prepared file system root
+#
+# Synopses:
+#   mklinux <rootdir> <add-on>...
+#   mklinux [-aldi] [-k <kernel>] [-o <output>] [<rootdir>]
+#
+# Options:
+#   -l		run ldconfig(1) on <rootdir>; this is needed when you've
+#		installed new libraries
+#   -d		run depmod(1) on <rootdir>/lib/modules; this is needed
+#		when you've installed new kernel modules
+#   -i		generate a bootable CD-ROM image from <rootdir> and <kernel>
+#		and save it in <output>; this is the default action if you
+#		don't specify any of -aldi
+#   -a		do all of -ldi
+#   -k <kernel>	tells where to find the kernel you'll want to boot;
+#		if not specified "kernel", "bzImage" and "vmlinuz"
+#		are checked in the parent directory of <rootdir>
+#   -o <output>	where to put the generated CD-ROM image; by default
+#		it's <rootdir>.iso
+#
+# <rootdir> is the directory whose contents will eventually constitute
+# the root file system of your virtual machine.  If left unspecified,
+# the script first looks at the current and parent directories (allowing
+# you to invoke mklinux from within the root filesystem).  If the search
+# was unsuccessful, the directories "fs", "rootfs" and "initrd" are checked.
+# A valid <rootdir> must contain an "init" program.
+#
+# With the second invocation form you can add <add-on> to your root
+# file system with which you can enhance the functionality of your
+# virtual machine.  It's a cheap operation (it just hardlinks the files)
+# but the larger your file system, the slower will be the .iso generation.
+
+# Parse the command line.
+opt_depmod="";
+opt_ldconfig="";
+opt_mkfs="";
+opt_kernel="";
+opt_output="";
+while getopts "ladik:o:" optchar;
+do
+	case "$optchar" in
+	a)
+		opt_depmod="yes";
+		opt_ldconfig="yes";
+		opt_mkfs="yes";
+		;;
+	d)
+		opt_depmod="yes";
+		;;
+	l)
+		opt_ldconfig="yes";
+		;;
+	i)
+		opt_mkfs="yes";
+		;;
+	k)
+		opt_kernel="$OPTARG";
+		;;
+	o)
+		opt_output="$OPTARG";
+		;;
+	*)
+		exit 1;
+		;;
+	esac
+done
+
+shift $((OPTIND - 1));
+
+# Locate the file system root to create an image from.
+# The presence of $keyfile indicates a file system root.
+keyfile="init";
+create_rootdir="no";
+if [ $# -gt 0 ];
+then	# Explicitly given, verify it.
+	rootdir="$1";
+	shift;
+	if [ "$rootdir" = "" ];
+	then
+		echo "$0: invalid root file system location" >&2;
+		exit 1;
+	elif [ ! -r "$rootdir/$keyfile" ];
+	then	# $rootdir doesn't exist yet, but we can create it
+		create_rootdir="yes";
+	fi
+else	# First try to find it in the upper directories.
+	rootdir="";
+	pushd . > /dev/null;
+	while :;
+	do
+		if [ . -ef / ];
+		then	# Top of the file system reached,
+			popd > /dev/null;
+			break;
+		elif [ -r "$keyfile" ];
+		then
+			rootdir=`basename "$PWD"`;
+			cd ..;
+			break;
+		else
+			cd ..;
+		fi
+	done
+
+	if [ "$rootdir" = "" ];
+	then	# Try some hardwired directory names.
+		for dir in fs rootfs initrd;
+		do
+			if [ -r "$dir/$keyfile" ];
+			then
+				rootdir="$dir";
+				break;
+			fi
+		done
+
+		# Have we found it?
+		if [ "$rootdir" = "" ];
+		then
+			echo "$0: file system root not found" >&2;
+			exit 1;
+		fi
+	fi
+fi
+
+# What to do?
+if [ "$opt_depmod" != "" -o "$opt_ldconfig" != "" -o "$opt_mkfs" != "" ];
+then	# Turn off all unspecified tasks.
+	if [ $# -ne 0 ];
+	then
+		echo "$0: too many arguments" >&2;
+		exit 1;
+	fi
+	[ "$opt_depmod" ]   || opt_depmod="no";
+	[ "$opt_ldconfig" ] || opt_ldconfig="no";
+	[ "$opt_mkfs    " ] || opt_mkfs="no";
+elif [ $# -eq 0 ];
+then	# None of -aldi is specified.
+	opt_depmod="no";
+	opt_ldconfig="no";
+	opt_mkfs="yes";
+fi
+
+# Add on.
+if [ $# -gt 0 ];
+then
+	# $create_rootdir if necessary.
+	[ "$create_rootdir" != "yes" -o -d "$rootdir" ] \
+		|| mkdir -p "$rootdir";
+
+	# Determine the absolute $rootdir.
+	cd "$rootdir";
+	rootdir="$PWD";
+	cd - > /dev/null;
+
+	# Link $dir/* under $rootdir.
+	for dir;
+	do
+		echo "Adding $dir";
+		(
+			# We'd use cp -rl, but want to skip .svn directories.
+			# So we have to use find, but then we can't use cp
+			# recursively.  Therefore we need a separate pass
+			# just to make the directories in $rootdir.
+			cd "$dir";
+			find . -name .svn -prune -o -type d -print0 \
+				| (cd "$rootdir"; xargs -0 -- mkdir -p);
+			find . -name .svn -prune -o \! -type d -print0 \
+				| xargs -0 -- cp -dl --parents -t "$rootdir";
+		);
+	done
+
+	exit 0;
+elif [ "$create_rootdir" = "yes " ];
+then
+	echo "$0: $rootdir doesn't exist or doesn't look " \
+		"like a file system root" >&2;
+	exit 1;
+fi
+
+# depmod (only if there are kernel modules)
+if [ "$opt_depmod" = "yes" -a -d "$rootdir/lib/modules" ];
+then	# Find out the kernel version.
+	version="";
+	for dir in $rootdir/lib/modules/*;
+	do
+		[ -d "$dir" ] || continue;
+		version=`basename "$dir"`;
+		case "$version" in
+		[0-9].*)
+			break;
+			;;
+		esac
+	done
+
+	if [ "$version" = "" ];
+	then
+		echo "$0: $rootdir does not have a modules directory" >&2;
+		exit 1;
+	fi
+
+	# Use System.map if present.
+	if [ -f System.map ];
+	then
+		map="-F System.map";
+	else
+		map="";
+	fi
+
+	echo "depmod $rootdir ($version)";
+	/sbin/depmod -a -b "$rootdir" $map "$version";
+fi
+
+# ldconfig
+if [ "$opt_ldconfig" = "yes" ];
+then
+	/sbin/ldconfig -r "$rootdir";
+fi
+
+# Create a bootable CD image which includes the kernel an the initrd
+# generated from the file system hierarchy.
+if [ "$opt_mkfs" = "yes" ];
+then
+	if [ "$opt_kernel" = "" ];
+	then	# Try to determine $opt_kernel.
+		for fname in kernel bzImage vmlinuz;
+		do
+			case "$rootdir" in
+			*/*)	# $rootdir is a path, look for the kernel
+				# one directory above.
+				if [ -r "$rootdir/../$fname" ];
+				then
+					opt_kernel="$rootdir/../$fname";
+					break;
+				fi
+				;;
+			*)	# We could be in the same directory as the
+				# kernel is.
+				if [ -r "$fname" ];
+				then
+					opt_kernel="$fname";
+					break;
+				fi
+				;;
+			esac
+		done
+
+		# Have we found it?
+		if [ "$opt_kernel" = "" ];
+		then
+			echo "$0: cannot find the kernel" >&2;
+			exit 1;
+		fi
+	fi
+	[ "$opt_output" != "" ] \
+		|| opt_output="$rootdir.iso";
+
+	# Create the directory from which the .iso will be generated.
+	wd=`mktemp -d mklinux.XXXXXX`;
+	fullwd="$PWD/$wd";
+	trap "rm -r $wd" EXIT;
+
+	# Copy the kernel...
+	cp "$opt_kernel" "$wd/bzImage";
+
+	# ...and the bootloader to the working directory,
+	# and tell it where to find the initrd.
+	cp /usr/lib/syslinux/isolinux.bin "$wd";
+	echo 'default bzImage initrd=/initrd.img' > "$wd/isolinux.cfg";
+
+	# Create the initrd from $rootdir.  Force root-ownership on all
+	# files.  Use low compression level for speed.
+	(cd "$rootdir"; find . -xdev \
+			\( -name .svn -o -name .git \) -prune -o -print \
+		| cpio --quiet -o -H newc --owner root.root \
+		| gzip -1c > "$fullwd/initrd.img");
+
+	# Generate the bootable CD image from $wd.
+	genisoimage -quiet -J -r -o "$opt_output" -b isolinux.bin \
+		-no-emul-boot -boot-load-size 4 -boot-info-table "$wd";
+	echo "$opt_output created";
+fi
+
+# End of mklinux

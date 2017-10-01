@@ -1,0 +1,4 @@
+modprobe iptable_filter;
+modprobe xt_sctp;
+modprobe ipt_LOG;
+modprobe ipt_REJECT;

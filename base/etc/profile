@@ -1,0 +1,16 @@
+#!/bin/sh
+
+alias l='/bin/ls -al';
+alias lx='/bin/ls -C';
+
+tty=`tty`;
+if [ `dirname "$tty"` = "/dev/pts" ];
+then
+	PS1="ptyp";
+else
+	PS1="";
+fi
+PS1="$PS1"`basename "$tty"`;
+export PS1="$PS1 \$PWD # ";
+
+# End of profile

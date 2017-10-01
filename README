@@ -1,0 +1,46 @@
+This is a kind of ultra-thin Linux distribution.  It serves two purposes:
+  -- it's very quick and easy (1 command: mklinux) to generate a bootable
+     CD-ROM image; it's also very fast to boot (5-10s)
+  -- the contents of the file system is very easy to modify: just do the
+     modification and regenerate the image
+
+This whole work is intended to be used in VirtualBox, but may be usable
+with other virtual machines.  Just generate the bootable CD-ROM image:
+ $ ./mklinux base
+fs.iso created
+
+Then create a virtual machine which has an IDE CD-ROM drive and load fs.iso.
+You don't have to create a hard disk.  This also means any changes made to
+the file system are lost.
+
+Networking: use the Intel PRO/1000 MT Desktop (8254OEM) network device
+(its driver is loaded automatically at startup).
+
+USB: enable the appropriate device in the Devices menu and say `usbon'
+in the VM.  After that you can `mount /mnt'.  Note that there has to be
+a physical device in the USB port.
+
+In kernel-3.15 everything is built-in; for some reason I disabled modules
+support.  Most (all?) of other binaries are from my own Debian 6.0.6/7.4.
+
+You're provided with 8 virtual terminals.  (You can switch between them
+with Alt-F2, F3, ...)
+
+There are a couple of 'add-ons' which can extend the functionality of
+the base system.  These are:
+  -- more: some common libraries and useful binaries (less and strace);
+     the other add-ons depend on these libraries.  It also contains gpm(1);
+     to use it you need to DISABLE "absolute pointing device" in the
+     System/Motherboard tab in your VM's settings.
+  -- iproute: ip(1) and friends
+  -- iptables: depends on the `more' add-on
+  -- ssh: start sshd by simply saying `sshd' on the command line,
+     then you can `ssh localhost' without trouble; also includes sftp
+  -- libc-2.17: these libraries co-exist with the base system's libc 2.13
+
+You can add an add-on with `mklinux <your-file-system> [<add-on>]',
+for example:
+ $ mklinux fs more ssh
+installs the `more' and `ssh' add-ons.  (Actually it just hardlinks files.)
+You should run ldconfig then because of the new libraries:
+ $ ./mklinux -li

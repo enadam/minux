@@ -1,0 +1,2 @@
+chmod go= /etc/ssh/ssh_host_*;
+sshd -e 2> /var/log/sshd.log;

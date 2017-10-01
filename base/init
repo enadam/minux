@@ -1,0 +1,64 @@
+#!/bin/sh
+#
+# init -- the PID=1 program of this system
+#
+
+# Only print kernel error messages.
+dmesg -n 4;
+
+# Populate /dev.  /dev/console is created by the kernel.
+mknod /dev/null		c 1 3;
+mknod /dev/zero		c 1 5;
+mknod /dev/random	c 1 8;
+mknod /dev/urandom	c 1 9;
+mknod /dev/tty		c 5 0;
+mknod /dev/tty1		c 4 1;
+mknod /dev/tty2		c 4 2;
+mknod /dev/tty3		c 4 3;
+mknod /dev/tty4		c 4 4;
+mknod /dev/tty5		c 4 5;
+mknod /dev/tty6		c 4 6;
+mknod /dev/tty7		c 4 7;
+mknod /dev/tty8		c 4 8;
+mknod /dev/ptmx		c 5 2;
+mknod /dev/sda		b 8 0;
+mknod /dev/sda1		b 8 1;
+
+# Mount virtual file systems.  devpts is special because it doesn't like
+# busybox' mount(8)'s habit of adding "auto" to the mount options.  Same
+# goes for proc in newer kernels.
+mount -a;
+mount proc -t proc /proc;
+mount devpts -t devpts /dev/pts;
+
+# Configure network.
+ifconfig lo localhost up;
+
+# Set up root environment.
+cd /root;
+export HOME="/root";
+export PATH="$HOME:/bin";
+export LD_LIBRARY_PATH="$HOME";
+
+# Run additional setup scripts.
+for script in /etc/rcS.d/*;
+do
+	[ -f "$script" ] || continue;
+	. "$script";
+done
+
+# Launch shells.
+for tty in /dev/tty[2-9]*;
+do
+	openvt sh -l;
+done
+
+# Launch the main shell.  Don't let it go, otherwise the kernel panics.
+while :;
+do
+	openvt -c 1 -w sh -l;
+	wait;
+	echo "no escape";
+done
+
+# End of init
